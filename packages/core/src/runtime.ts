@@ -83,9 +83,9 @@ export interface HandleResult {
   blocked?: string;
 }
 
-/** Messages kept verbatim in context; older ones are folded into one summary message. */
+/** Target message count before older turns are folded; the latest whole turn is always kept. */
 export const SESSION_KEEP_MESSAGES = 60;
-/** Characters of kept transcript (JSON) before older turns are folded even if the count is under the limit. */
+/** JSON text/metadata character budget, excluding image data; the latest whole turn may exceed it. */
 export const SESSION_KEEP_CHARS = 240_000;
 /** An approved request can be acted on for this long before it lapses. */
 export const APPROVAL_USE_WINDOW_MS = 15 * 60 * 1000;
@@ -1071,13 +1071,15 @@ export function writeSession(file: string, messages: AgentMessage[]): void {
 
 /**
  * Rebuild a context from stored messages: drop system messages (rebuilt per run), drop a
- * trailing tool call that never got its result, keep the last SESSION_KEEP_MESSAGES (and
- * no more than SESSION_KEEP_CHARS of JSON) and fold everything older into one plain-text
- * summary message. Idempotent on an already folded transcript.
+ * trailing tool call that never got its result, and fold older whole turns into one
+ * plain-text summary to target SESSION_KEEP_MESSAGES and SESSION_KEEP_CHARS of JSON
+ * text/metadata, excluding image data. Preserve the latest whole user turn even when it
+ * exceeds either budget. Idempotent on an already folded transcript.
  */
 export function restoreMessages(stored: AgentMessage[], now: Date, keep = SESSION_KEEP_MESSAGES, maxChars = SESSION_KEEP_CHARS): AgentMessage[] {
   const messages = dropOrphanToolCalls(stored.filter((m) => m.role !== "system"));
   let start = messages.length <= keep ? 0 : nextUserTurn(messages, messages.length - keep);
+  if (start === messages.length) start = Math.max(0, messages.findLastIndex((message) => message.role === "user"));
   // Large tool results can blow the context long before the message count does.
   while (start < messages.length - 1 && charSize(messages.slice(start)) > maxChars) {
     const next = nextUserTurn(messages, start + 1);
@@ -1097,8 +1099,8 @@ export function restoreMessages(stored: AgentMessage[], now: Date, keep = SESSIO
 
 /**
  * The live context before a model call: the system message stays, the rest is folded like
- * a restore. The fold leaves room for the turn about to be added, so the transcript never
- * sits above SESSION_KEEP_MESSAGES + 2 (system message and summary) between turns.
+ * a restore. The fold targets SESSION_KEEP_MESSAGES - 2 to leave room for the next turn,
+ * but preserves the latest whole user turn even when it exceeds the count or text/metadata budget.
  */
 export function trimContext(messages: AgentMessage[], now: Date): AgentMessage[] {
   const system = messages.filter((m) => m.role === "system");
@@ -1110,14 +1112,16 @@ export function trimContext(messages: AgentMessage[], now: Date): AgentMessage[]
 function nextUserTurn(messages: AgentMessage[], from: number): number {
   let i = from;
   while (i < messages.length && messages[i]?.role !== "user") i++;
-  return i >= messages.length ? from : i;
+  return i;
 }
 
 function charSize(messages: AgentMessage[]): number {
   let total = 0;
   for (const m of messages) {
     try {
-      total += JSON.stringify(m).length;
+      total += JSON.stringify(m, function (this: { type?: unknown }, key: string, value: unknown) {
+        return key === "data" && this.type === "image" ? undefined : value;
+      }).length;
     } catch {
       total += 1000;
     }
