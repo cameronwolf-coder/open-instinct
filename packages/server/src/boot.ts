@@ -46,6 +46,7 @@ import { appsNotConfiguredTool, setupSummaryFor } from "./setup-summary.js";
 import { createScheduleSync, type ScheduleSync } from "./maritime-schedules.js";
 import { loadPaymentsModule, paymentsEnv, type LinkWalletLike, type PaymentsModule } from "./payments.js";
 import { createSkillCatalog, formatSkillsIndex, loadSkillTool, ownerSkillsDir, resolveSkillsDir, skillsFor } from "./skills.js";
+import { HermesWatcher, wikiPromptSection, wikiTools } from "./wiki-context.js";
 
 /** How often the skill folders are re-read; an owner-installed skill shows up within this. */
 const SKILLS_REFRESH_MS = 30_000;
@@ -223,6 +224,13 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
   }) : undefined;
 
   registry.registerMany(fileTools(state.path("workspace"), { env }));
+
+  // The owner's LLM Wiki vault (synced copy) and the Hermes health Hal publishes into it.
+  const wikiDir = env.INSTINCT_WIKI_DIR?.trim() || undefined;
+  if (wikiDir) {
+    registry.registerMany(wikiTools(wikiDir));
+    log(`wiki: ${wikiDir}`);
+  }
 
   // Web app deploys through Ample: with the deployer's credential, or with an
   // account this agent signs up for itself on the first deploy (AMPLE_SIGNUP=1),
@@ -424,7 +432,10 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
     getApiKey: (provider: string) => apiKeyFor(provider, env),
     // Core cannot import the network package; the server bridges OIP and the network guidance.
     describeData: describeDataPart,
-    promptExtra: promptExtraFor,
+    promptExtra: (principal, channel) => [
+      ...promptExtraFor(principal, channel),
+      ...(wikiDir ? wikiPromptSection(wikiDir, principal, new Date()) : []),
+    ],
     setupSummary: () =>
       setupSummaryFor({
         inkbox: inkbox ? { handle: inkbox.handle } : undefined,
@@ -436,6 +447,10 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
   });
 
   const stopScheduler = scheduler.start((entry) => runtime.runScheduled(entry));
+  const hermesWatcher = wikiDir
+    ? new HermesWatcher({ vault: wikiDir, state, alert: (task) => runtime.runSystemTask(task), log })
+    : undefined;
+  hermesWatcher?.start();
 
   let sync: ScheduleSync | undefined;
   if (env.MARITIME_BACKEND_URL && env.MARITIME_INTERNAL_TOKEN && env.MARITIME_AGENT_ID) {
@@ -477,6 +492,7 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
     ...(channel ? { onCallEnded: callReporter(channel, (text, key) => runtime.relayToOwner(text, key), log) } : {}),
     async close() {
       stopScheduler();
+      hermesWatcher?.stop();
       sync?.stop();
       await safely(log, "computer close", () => computer?.close());
       await safely(log, "apps close", () => apps?.close());

@@ -162,3 +162,7 @@ and keep the capability tags honest so the trust tiers keep meaning what they sa
 ## Pi subscription login (local integration)
 
 Run `node packages/server/scripts/login-pi.mjs` from the repository root to sign in with your ChatGPT/Codex subscription. The login is saved in Pi's private `~/.pi/agent/auth.json` file. Open Instinct uses Pi's model runtime to refresh and persist expiring credentials automatically. Set `INSTINCT_PI_AUTH_PATH` to use a different Pi authentication file. Explicit model API keys in the environment take precedence. Choose an `openai-codex/<model>` from the installed Pi catalog with `instinct init --model`.
+
+## LLM Wiki and Hermes (local integration)
+
+Set `INSTINCT_WIKI_DIR` to a synced copy of the LLM Wiki vault to give the owner conversation read-only `wiki_read`, `wiki_ls`, `wiki_grep` and `wiki_updates` tools, plus `hermes_status` and `hermes_output` for the Hermes fleet. All of them need `files.read`, so only the owner can use them. Hermes data comes from `Machine/Status/hal-cron.json`, which Hal's `hal-cron-status.timer` publishes and Syncthing carries. The vault's `System/Automation.md` documents the schema. The owner's system prompt gets a short live-status line. A watcher texts the owner when a Hermes job newly starts failing or the status feed goes stale. Its first check after start only records a baseline, and its state lives in `hermes-watch.json` in the data dir. The daily brief adds a systems line when these tools exist.

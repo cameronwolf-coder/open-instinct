@@ -34,12 +34,17 @@ the gap unless the owner has asked for it before.
    the ask in one line with the same wording.
 6. Scheduled items for today you created (check-ins, rides) so the owner knows
    you have them.
+7. Systems, only when the `hermes_status` and `wiki_updates` tools exist:
+   `hermes_status` for jobs failing or stale, and `wiki_updates` since the
+   previous brief for what changed (new decisions, project pages, notable
+   agent runs). Name what broke and the one or two changes worth knowing;
+   skip routine receipts.
 
 ## Write
 
 4 to 8 lines, plain prose, no markdown, no headings, no emojis unless the owner
 uses them. Order: greeting with weather, calendar, mail, waiting on, approvals,
-one offer. Times in the owner's timezone. Skip empty sections. If nothing at
+systems, one offer. Times in the owner's timezone. Skip empty sections. If nothing at
 all is happening, send two lines.
 
 Agent: Morning, Maria. 61 and clear, rain after 4. Three things today: Lena

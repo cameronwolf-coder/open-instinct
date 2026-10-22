@@ -8,6 +8,7 @@ const composio = JSON.parse(readFileSync(new URL(".instinct/secrets/composio.jso
 env.COMPOSIO_API_KEY = composio.apiKey;
 env.COMPOSIO_USER_ID = composio.userId;
 env.COMPOSIO_ALL_IDENTITIES = "1";
+env.INSTINCT_WIKI_DIR = "/home/cameron/obsidian-vault/vaults/LLM Wiki";
 const child = spawn(process.execPath, ["packages/cli/dist/bin.js", "dev", "--tunnel"], { cwd: root, env, stdio: "inherit" });
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => child.kill(signal));
 child.on("exit", code => process.exit(code ?? 1));
