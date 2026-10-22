@@ -312,6 +312,7 @@ describe("ComposioApps in all-toolkits mode", () => {
     const calls: unknown[] = [];
     const toolkits = vi.fn(async (opts?: { cursor?: string }) => {
       calls.push(opts);
+      if ((opts as any).limit > 50) throw new Error("Composio toolkit API maximum is 50");
       if (!opts?.cursor) {
         return { items: [{ slug: "GMAIL", connection: { isActive: true } }, { slug: "notion", connection: { isActive: false } }, { slug: "hackernews", isNoAuth: true }], nextCursor: "p2" };
       }
@@ -330,13 +331,13 @@ describe("ComposioApps in all-toolkits mode", () => {
     ]);
   });
 
-  it("stops paging after a bounded number of pages", async () => {
+  it("rejects a repeated pagination cursor instead of silently truncating results", async () => {
     const toolkits = vi.fn(async () => ({ items: [{ slug: "gmail", connection: { isActive: true } }], nextCursor: "again" }));
     const composio = fakeComposio({ sessions: { s: fakeSession("s", { toolkits }) } });
     const state = fakeState({ [APPS_STATE_FILE]: { sessionId: "s", userId: "maria", toolkits: ["*"], mode: "router", createdAt: "x" } });
     const apps = new ComposioApps({ ...base, toolkits: ["all"], state, adapters: { createComposio: () => composio.client, connectMcp: fakeMcp().connectMcp } });
-    expect(await apps.connectedToolkits()).toEqual([{ slug: "gmail", connected: true }]);
-    expect(toolkits).toHaveBeenCalledTimes(20);
+    await expect(apps.connectedToolkits()).rejects.toThrow("repeated toolkit cursor");
+    expect(toolkits).toHaveBeenCalledTimes(2);
   });
 
   it("still hands out connect links for any toolkit", async () => {

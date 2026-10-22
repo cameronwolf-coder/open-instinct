@@ -158,3 +158,7 @@ rewrite:
 
 Read [CONTRIBUTING.md](../CONTRIBUTING.md) for the rules of the house, open a draft PR early,
 and keep the capability tags honest so the trust tiers keep meaning what they say.
+
+## Pi subscription login (local integration)
+
+Run `node packages/server/scripts/login-pi.mjs` from the repository root to sign in with your ChatGPT/Codex subscription. The login is saved in Pi's private `~/.pi/agent/auth.json` file. Open Instinct uses Pi's model runtime to refresh and persist expiring credentials automatically. Set `INSTINCT_PI_AUTH_PATH` to use a different Pi authentication file. Explicit model API keys in the environment take precedence. Choose an `openai-codex/<model>` from the installed Pi catalog with `instinct init --model`.

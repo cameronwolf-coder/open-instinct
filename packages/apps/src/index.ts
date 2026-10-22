@@ -32,3 +32,5 @@ export { wrapMcpTool, wrapMcpTools, toolNameFor, describeCall, parametersFor, me
 
 /** Toolkits a new agent starts with. */
 export const DEFAULT_TOOLKITS: string[] = ["gmail", "googlecalendar", "googlecontacts"];
+
+export { ComposioFleet, projectConnections, routeTool } from "./fleet.js";

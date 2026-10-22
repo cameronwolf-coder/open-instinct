@@ -92,7 +92,7 @@ export interface HandleResult {
 
 /** Messages kept verbatim in context; older ones are folded into one summary message. */
 export const SESSION_KEEP_MESSAGES = 60;
-/** Characters of kept transcript (JSON) before older turns are folded even if the count is under the limit. */
+/** Characters of kept transcript (JSON, image data excluded) before older turns are folded even if the count is under the limit. */
 export const SESSION_KEEP_CHARS = 240_000;
 /** How many of the newest image-bearing tool results keep their pictures through a fold. */
 export const KEEP_RECENT_IMAGES = 2;
@@ -1256,12 +1256,13 @@ export function writeSession(file: string, messages: AgentMessage[]): void {
 /**
  * Rebuild a context from stored messages: drop system messages (rebuilt per run), drop a
  * trailing tool call that never got its result, keep the last SESSION_KEEP_MESSAGES (and
- * no more than SESSION_KEEP_CHARS of JSON) and fold everything older into one plain-text
- * summary message. Idempotent on an already folded transcript.
+ * no more than SESSION_KEEP_CHARS of JSON, image data excluded) and fold everything older
+ * into one plain-text summary message. Idempotent on an already folded transcript.
  */
 export function restoreMessages(stored: AgentMessage[], now: Date, keep = SESSION_KEEP_MESSAGES, maxChars = SESSION_KEEP_CHARS, keepImages = KEEP_RECENT_IMAGES): AgentMessage[] {
   const messages = dropOldImages(dropOrphanToolCalls(stored.filter((m) => m.role !== "system")), keepImages);
   let start = messages.length <= keep ? 0 : nextUserTurn(messages, messages.length - keep);
+  if (start === messages.length) start = Math.max(0, messages.findLastIndex((message) => message.role === "user"));
   // Large tool results can blow the context long before the message count does. The slice
   // only ever moves to a user or assistant turn; when none is left it stays where it is,
   // even above budget, because a slice that starts at a tool result is rejected outright.
@@ -1331,7 +1332,9 @@ function charSize(messages: AgentMessage[]): number {
   let total = 0;
   for (const m of messages) {
     try {
-      total += JSON.stringify(m).length;
+      total += JSON.stringify(m, function (this: { type?: unknown }, key: string, value: unknown) {
+        return key === "data" && this.type === "image" ? undefined : value;
+      }).length;
     } catch {
       total += 1000;
     }

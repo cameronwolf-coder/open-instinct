@@ -21,7 +21,10 @@ function fakes(opts: { existing?: Subscription[]; configured?: boolean } = {}) {
   f.inkbox = {
     getIdentity: async (handle: string) => ({ id: `id_${handle}` }),
     webhooks: { subscriptions: {
-      list: async () => f.subs,
+      list: async (filters: { agentIdentityId: string; scope?: string }) => {
+        expect(filters.scope).toBe("identity");
+        return f.subs;
+      },
       update: async (id: string, update: { eventTypes: string[]; scope?: string }) => {
         f.updated.push({ id, ...update });
         Object.assign(f.subs.find((s) => s.id === id)!, update);

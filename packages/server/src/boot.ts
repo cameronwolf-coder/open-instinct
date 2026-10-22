@@ -5,6 +5,7 @@
  * embedders can drive it the same way.
  */
 import { resolve } from "node:path";
+import { piModelRuntime } from "./pi-auth.js";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
@@ -33,7 +34,7 @@ import { CALL_ORIGINATIONS, InkboxA2A, InkboxChannel, InkboxInboundHydrator, Ink
 import type { CallEndedEvent, CallOrigination } from "@open-instinct/inkbox";
 import { computerGuidance, detectComputer } from "@open-instinct/computer";
 import type { ComputerBackend } from "@open-instinct/computer";
-import { ComposioApps, DEFAULT_TOOLKITS, OPENAI_COMPLETIONS_TOOL_LIMIT, appsGuidance, appsTools, composioModeFor } from "@open-instinct/apps";
+import { ComposioApps, ComposioFleet, DEFAULT_TOOLKITS, OPENAI_COMPLETIONS_TOOL_LIMIT, appsGuidance, appsTools, composioModeFor } from "@open-instinct/apps";
 import { ampleTools, type AmpleCredentials } from "@open-instinct/ample";
 import { AtomicMailBackend, atomicMailGuidance } from "@open-instinct/atomicmail";
 import { contextTools } from "@open-instinct/context";
@@ -69,7 +70,7 @@ export interface BootResult {
   outbox: Outbox;
   close(): Promise<void>;
   computerKind?: string;
-  apps?: ComposioApps;
+  apps?: ComposioApps | ComposioFleet;
   /** Toolkits Composio reports as connected at boot, for the status page. */
   appsConnected?: string[];
   startedAt: number;
@@ -118,6 +119,10 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
 
   const model = opts.model ?? resolveModel(config.model.primary, env);
   const modelSpec = `${model.provider}/${model.id}`;
+  // Explicit stream overrides and environment credentials keep their existing precedence.
+  const piModels = !opts.streamFn && !apiKeyFor(model.provider, env)
+    ? await piModelRuntime(env, model.provider)
+    : undefined;
 
   const inkbox = inkboxSettings(env, config);
   const a2a = inkbox ? new InkboxA2A({
@@ -276,14 +281,15 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
   // Apps through Composio, when the deployer gave us a key. The key is the switch:
   // config.apps.enabled only records that a toolkit list was seeded. A list of
   // `all` (or `*`) drops the allowlist so any app can be connected by name.
-  let apps: ComposioApps | undefined;
+  let apps: ComposioApps | ComposioFleet | undefined;
   let appsConnected: string[] | undefined;
   if (env.COMPOSIO_API_KEY) {
     const toolkits = config.apps.toolkits.length > 0 ? config.apps.toolkits : DEFAULT_TOOLKITS;
     // Direct mode lists one tool per app action; router mode lists Composio's meta tools only.
     // OpenAI-style chat completions (the Maritime LLM proxy) cap a request at 128 tools.
     const { mode, reason } = composioModeFor(env, model.api);
-    const composio = new ComposioApps({ apiKey: env.COMPOSIO_API_KEY, userId: externalUserId, toolkits, mode, state, logger: log });
+    const Apps = env.COMPOSIO_ALL_IDENTITIES === "1" ? ComposioFleet : ComposioApps;
+    const composio = new Apps({ apiKey: env.COMPOSIO_API_KEY, userId: env.COMPOSIO_USER_ID?.trim() || externalUserId, toolkits, mode, state, logger: log });
     log(`apps: composio ${composio.mode} mode (${composio.allToolkits ? "all toolkits always use router" : reason})`);
     const connected = await safely(log, "apps", async () => {
       await composio.connect();
@@ -299,6 +305,7 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
       const missing = connected.status.filter((s: ToolkitStatus) => !s.connected).map((s: ToolkitStatus) => s.slug);
       appsConnected = on;
       promptSections.push(appsGuidance(on, missing, { anyApp: composio.allToolkits, unavailable: composio.unavailableToolkits }));
+      if (composio instanceof ComposioFleet) promptSections.push("Composio has multiple identity groups. Call apps_accounts for account IDs and statuses. Every app_composio_* tool requires account_group. Use the group named by the owner, and ask if unclear. Within a group, select the connected account ID for tasks involving multiple accounts of the same app. Never mix session_id values or connected account IDs across groups. For new connections use apps_connect_group, not apps_connect.");
       log(`apps: ${connected.tools.length} tools${composio.allToolkits ? " (any app by name)" : ""}, connected: ${on.join(", ") || "none"}`);
     }
   }
@@ -413,7 +420,7 @@ export async function boot(env: NodeJS.ProcessEnv, opts: BootOptions = {}): Prom
     a2aStore,
     ...(a2a ? { loadA2ATask: (taskId: string) => a2a.getTask(taskId) } : {}),
     skillsPrompt,
-    streamFn: opts.streamFn ?? (streamSimple as StreamFn),
+    streamFn: opts.streamFn ?? (piModels ? piModels.streamSimple.bind(piModels) as StreamFn : streamSimple as StreamFn),
     getApiKey: (provider: string) => apiKeyFor(provider, env),
     // Core cannot import the network package; the server bridges OIP and the network guidance.
     describeData: describeDataPart,

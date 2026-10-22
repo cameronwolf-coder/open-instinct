@@ -279,3 +279,7 @@ The reply comes back on iMessage.
 - [PERMISSIONS.md](PERMISSIONS.md): tiers, capabilities, grants
 - [PAYMENTS.md](PAYMENTS.md): the Stripe Link wallet, a separate rail from Composio
 - [`packages/apps/README.md`](../packages/apps/README.md): API and tests
+
+## Existing Lupine account groups (local integration)
+
+Set `COMPOSIO_ALL_IDENTITIES=1` to discover every existing identity in the configured project and keep one persistent session per identity. Router tools require `account_group`. `apps_accounts` lists connection IDs and status; `apps_connect_group` provides sign-in links for a chosen group. Multiple accounts within a toolkit are enabled. Saved sessions live below `.instinct/composio-groups/`. `packages/server/scripts/start-local.mjs` loads the private local credentials and enables this mode.

@@ -72,7 +72,7 @@ export async function ensureWebhookSubscription(opts: EnsureWebhookOptions): Pro
   // Persist one-time keys before any later request can fail.
   writeWebhookSecrets(opts.state, { identityId, url: opts.url, signingKey });
 
-  const matching = (await inkbox.webhooks.subscriptions.list({ agentIdentityId: identityId })).filter((s) => s.url === opts.url);
+  const matching = (await inkbox.webhooks.subscriptions.list({ agentIdentityId: identityId, scope: "identity" })).filter((s) => s.url === opts.url);
   const existing = matching[0];
   let subscriptionId: string;
   let created = false;

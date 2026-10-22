@@ -11,7 +11,7 @@ import { MemoryStore } from "../src/memory.js";
 import { PolicyEngine, defaultPolicy } from "../src/policy.js";
 import { coreTools } from "../src/core-tools.js";
 import { A2AStore } from "../src/a2a-state.js";
-import { AgentRuntime, InboundUncertainError, SESSION_KEEP_MESSAGES, hashArgs, restoreMessages, runtimeKey, stableJson, type Outbox, type RuntimeDeps } from "../src/runtime.js";
+import { AgentRuntime, InboundUncertainError, SESSION_KEEP_CHARS, SESSION_KEEP_MESSAGES, hashArgs, restoreMessages, runtimeKey, stableJson, type Outbox, type RuntimeDeps } from "../src/runtime.js";
 import { Scheduler } from "../src/scheduler.js";
 import { ToolRegistry, defineTool, textResult, type RegisteredTool } from "../src/tools.js";
 import type { InboundMessage, OutboundMessage, Policy, Principal } from "../src/types.js";
@@ -1566,6 +1566,40 @@ describe("restoreMessages", () => {
     expect(summary).toContain("question 0");
     expect(restored[1]!.role).toBe("user");
     expect(JSON.stringify(restored.at(-1)!.content)).toContain("answer 44");
+  });
+
+  it.each([false, true])("retains a large image result with its call (later user turn: %s)", (laterUserTurn) => {
+    const call = fauxToolCall("screenshot", {});
+    const result: AgentMessage = {
+      role: "toolResult", toolCallId: call.id, toolName: call.name,
+      content: [{ type: "image", data: "A".repeat(485_995), mimeType: "image/png" }],
+      isError: false, timestamp: 1,
+    };
+    const stored = [user(1), fauxAssistantMessage([call], { stopReason: "toolUse" }), result, assistant(1)];
+    if (laterUserTurn) stored.push(user(2), assistant(2));
+    const before = JSON.stringify(stored);
+
+    const restored = restoreMessages(stored, new Date());
+
+    expect(JSON.stringify(restored) === before).toBe(true);
+    expect(JSON.stringify(stored) === before).toBe(true);
+  });
+
+  it("folds older large text tool turns as complete turns", () => {
+    const call = fauxToolCall("echo", {});
+    const result: AgentMessage = {
+      role: "toolResult", toolCallId: call.id, toolName: call.name,
+      content: [{ type: "text", text: "x".repeat(SESSION_KEEP_CHARS + 1) }],
+      isError: false, timestamp: 1,
+    };
+    const latest = [user(2), assistant(2)];
+    const stored = [user(1), fauxAssistantMessage([call], { stopReason: "toolUse" }), result, assistant(1), ...latest];
+
+    const restored = restoreMessages(stored, new Date());
+
+    expect(restored.slice(1)).toEqual(latest);
+    expect(JSON.stringify(restored[0])).toContain("4 earlier messages");
+    expect(restoreMessages(restored, new Date())).toEqual(restored);
   });
 
   it("drops an assistant tool call that never got its result", () => {

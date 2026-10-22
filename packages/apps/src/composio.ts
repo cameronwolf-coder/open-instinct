@@ -75,6 +75,8 @@ export interface ComposioAppsOptions {
   logger?: (m: string) => void;
   /** Default `direct`. Ignored (treated as `router`) when toolkits is the all list. */
   mode?: ComposioSessionMode;
+  multiAccount?: boolean;
+  connectedAccounts?: Record<string, string[]>;
   /** Test seams. Production code leaves this out. */
   adapters?: {
     createComposio?: (apiKey: string) => ComposioClientLike;
@@ -94,6 +96,7 @@ export interface AppsState {
   toolkits: string[];
   mode: ComposioSessionMode;
   createdAt: string;
+  connectedAccounts?: Record<string, string[]>;
 }
 
 export interface ToolkitStatus {
@@ -125,10 +128,10 @@ export interface SessionCreateConfig {
   manageConnections: { enable: boolean };
   mcp: true;
   sessionPreset?: "direct_tools";
+  multiAccount?: { enable: boolean; requireExplicitSelection?: boolean };
+  connectedAccounts?: Record<string, string[]>;
 }
 
-/** Pages of connected toolkits fetched in all mode before giving up. */
-const MAX_CONNECTED_PAGES = 20;
 /** Composio's connected-accounts endpoint rejects a limit above 50 with a 400. */
 const CONNECTED_PAGE_SIZE = 50;
 
@@ -197,7 +200,7 @@ export class ComposioApps {
 
   private async openSession(): Promise<ComposioSessionLike> {
     const saved = this.opts.state.readJson<AppsState | undefined>(APPS_STATE_FILE, undefined);
-    if (saved && sessionMatches(saved, this.opts.userId, this.toolkitSlugs, this.mode)) {
+    if (saved && sessionMatches(saved, this.opts.userId, this.toolkitSlugs, this.mode) && JSON.stringify(saved.connectedAccounts ?? {}) === JSON.stringify(this.opts.connectedAccounts ?? {})) {
       try {
         const session = await this.composio.sessions.use(saved.sessionId, { mcp: true });
         this.log(`composio: reusing session ${saved.sessionId}`);
@@ -211,6 +214,8 @@ export class ComposioApps {
     const config: SessionCreateConfig = {
       manageConnections: { enable: true },
       mcp: true,
+      ...(this.opts.multiAccount ? { multiAccount: { enable: true, requireExplicitSelection: true } } : {}),
+      ...(this.opts.connectedAccounts ? { connectedAccounts: this.opts.connectedAccounts } : {}),
     };
     if (this.allToolkits) {
       // No allowlist: the meta tools can search, run and connect any toolkit. The
@@ -228,6 +233,7 @@ export class ComposioApps {
       toolkits: this.toolkitSlugs,
       mode: this.mode,
       createdAt: new Date().toISOString(),
+      ...(this.opts.connectedAccounts ? { connectedAccounts: this.opts.connectedAccounts } : {}),
     };
     this.opts.state.writeJson(APPS_STATE_FILE, state);
     this.log(`composio: created session ${session.sessionId}${this.allToolkits ? " (all toolkits)" : ""}`);
@@ -295,12 +301,15 @@ export class ComposioApps {
     const session = this.requireSession();
     const slugs = new Set<string>();
     let cursor: string | undefined;
-    for (let page = 0; page < MAX_CONNECTED_PAGES; page += 1) {
+    const cursors = new Set<string>();
+    while (true) {
       const res = await session.toolkits({ isConnected: true, limit: CONNECTED_PAGE_SIZE, ...(cursor ? { cursor } : {}) });
       for (const item of res.items) {
         if (item.connection?.isActive === true) slugs.add(item.slug.toLowerCase());
       }
       if (!res.nextCursor) break;
+      if (cursors.has(res.nextCursor)) throw new Error("Composio returned a repeated toolkit cursor");
+      cursors.add(res.nextCursor);
       cursor = res.nextCursor;
     }
     return [...slugs].sort().map((slug) => ({ slug, connected: true }));

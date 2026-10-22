@@ -64,7 +64,7 @@ async function defaultImportServer(): Promise<ServerModule> {
   return mod as ServerModule;
 }
 
-const defaultConnectTunnel: TunnelConnector = async ({ apiKey, handle, baseUrl, forwardTo, log }) => {
+export const defaultConnectTunnel: TunnelConnector = async ({ apiKey, handle, baseUrl, forwardTo, log }) => {
   const { Inkbox } = await import("@inkbox/sdk");
   const { connect } = await import("@inkbox/sdk/tunnels/connect");
   const listener = await connect(new Inkbox({ apiKey, ...(baseUrl ? { baseUrl } : {}) }), {
